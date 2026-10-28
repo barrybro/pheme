@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Pheme
+GenericName=Feed Reader
+Comment=Read your Feedly subscriptions
+Exec=pheme
+Icon=pheme
+Terminal=false
+Categories=Network;News;Feed;Qt;
+Keywords=RSS;Atom;Feedly;News;
+StartupWMClass=pheme
