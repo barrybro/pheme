@@ -85,8 +85,9 @@ ApplicationWindow {
 
     onDetailShownChanged: if (detailShown) markCurrentRead()
 
-    /// Past the welcome screen: using Pheme locally, with Feedly, or both.
-    readonly property bool ready: settings.onboarded || app.signedIn
+    /// Past the welcome screen: using Pheme locally, with Feedly, or both. Without Feedly
+    /// there's nothing to choose, so there's no welcome screen.
+    readonly property bool ready: settings.onboarded || app.signedIn || !app.feedlyEnabled
     property bool showingSignIn: false
     property bool started: false
 
@@ -131,10 +132,41 @@ ApplicationWindow {
         property bool onboarded: false
     }
 
+    // Set in the Settings window.
+    Settings {
+        id: preferences
+        category: "general"
+        /// 0: show counts, 1: show a dot, 2: hide.
+        property int unreadCountDisplay: 0
+        property string articleTheme: "Default"
+        property bool javascriptEnabled: false
+        /// Minutes between automatic refreshes; 0 means manually only.
+        property int refreshInterval: 30
+    }
+
+    SettingsWindow {
+        id: settingsWindow
+        app: app
+        windowSettings: settings
+        preferences: preferences
+    }
+
+    // A Binding, unlike a plain property binding, survives the toolbar's text size menu
+    // setting textSize, so the Settings window can still change it.
+    Binding { target: detail; property: "textSize"; value: settings.textSize }
+
+    function showSettings() {
+        settingsWindow.show()
+        settingsWindow.raise()
+        settingsWindow.requestActivate()
+    }
+
     function start() {
         if (started)
             return
         started = true
+        // Turning on the Feedly flag later shouldn't bring up the welcome screen.
+        settings.onboarded = true
         sidebarModel.reload()
         sidebar.selectKey(settings.lastSource)
         if (sidebar.currentKey.length === 0)
@@ -198,9 +230,9 @@ ApplicationWindow {
     }
 
     Timer {
-        interval: 30 * 60 * 1000
+        interval: Math.max(1, preferences.refreshInterval) * 60 * 1000
         repeat: true
-        running: window.ready
+        running: window.ready && preferences.refreshInterval > 0
         onTriggered: app.refresh()
     }
 
@@ -280,6 +312,8 @@ ApplicationWindow {
                 }
                 onImportRequested: importDialog.open()
                 onExportRequested: exportDialog.open()
+                onSettingsRequested: window.showSettings()
+                unreadCountDisplay: preferences.unreadCountDisplay
                 onSignInRequested: window.showingSignIn = true
             }
 
@@ -324,8 +358,9 @@ ApplicationWindow {
                 app: app
                 showBack: window.layoutMode === "one"
                 onBackRequested: window.layoutMode === "one" ? window.showPane("timeline") : timeline.list.forceActiveFocus()
-                textSize: settings.textSize
                 onTextSizeChanged: settings.textSize = textSize
+                theme: preferences.articleTheme
+                javascriptEnabled: preferences.javascriptEnabled
                 onToggleReadRequested: window.toggleRead()
                 onToggleStarRequested: window.toggleStar()
                 onNextUnreadRequested: window.goToNextUnread()
@@ -463,6 +498,7 @@ ApplicationWindow {
     Shortcut { sequences: ["Ctrl+=", "Ctrl++"]; onActivated: detail.textSize = Math.min(4, detail.textSize + 1) }
     Shortcut { sequence: "Ctrl+-"; onActivated: detail.textSize = Math.max(0, detail.textSize - 1) }
     Shortcut { sequence: "Ctrl+Q"; onActivated: Qt.quit() }
+    Shortcut { sequence: "Ctrl+,"; onActivated: window.showSettings() }
     Shortcut { sequences: ["N", "+", "Space"]; enabled: window.commandsEnabled; onActivated: window.goToNextUnread() }
     Shortcut { sequence: "R"; enabled: window.commandsEnabled; onActivated: window.toggleRead() }
     Shortcut { sequence: "S"; enabled: window.commandsEnabled; onActivated: window.toggleStar() }

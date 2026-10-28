@@ -5,6 +5,8 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
     }
 
     #[auto_cxx_name]
@@ -21,7 +23,13 @@ pub mod qobject {
         #[qproperty(QString, last_refreshed)]
         #[qproperty(bool, needs_sign_in)]
         #[qproperty(bool, adding_feed)]
+        #[qproperty(bool, feedly_enabled)]
+        #[qproperty(bool, developer_build)]
         type AppController = super::AppControllerRust;
+
+        /// Turns the Feedly feature flag on or off (dev builds only). Turning it off signs out.
+        #[qinvokable]
+        fn set_feedly_flag(self: Pin<&mut AppController>, enabled: bool);
 
         /// Opens the browser to sign in to Feedly with OAuth.
         #[qinvokable]
@@ -45,9 +53,24 @@ pub mod qobject {
         fn send_pending(self: Pin<&mut AppController>);
 
         /// Renders an article (or, with an empty ID, `placeholder`) to a page and returns its
-        /// file:// URL for the web view to load.
+        /// file:// URL for the web view to load. `theme` is an article theme's name.
         #[qinvokable]
-        fn article_page(self: &AppController, article_id: &QString, placeholder: &QString, text_size: i32, dark: bool) -> QString;
+        fn article_page(
+            self: &AppController,
+            article_id: &QString,
+            placeholder: &QString,
+            text_size: i32,
+            dark: bool,
+            theme: &QString,
+            javascript: bool,
+        ) -> QString;
+
+        /// The article themes' names, "Default" first.
+        #[qinvokable]
+        fn theme_names(self: &AppController) -> QStringList;
+
+        #[qinvokable]
+        fn open_themes_folder(self: &AppController);
 
         #[qinvokable]
         fn open_url(self: &AppController, url: &QString);
@@ -95,10 +118,10 @@ pub mod qobject {
 use crate::credentials::{self, CredentialKind, Credentials};
 use crate::feedly::api::{FeedlyApi, http_client};
 use crate::feedly::oauth::{OAuthClient, open_in_browser};
-use crate::{local, render, store, sync};
+use crate::{flags, local, render, store, sync, themes};
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QStringList};
 use qobject::*;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -115,6 +138,8 @@ pub struct AppControllerRust {
     last_refreshed: QString,
     needs_sign_in: bool,
     adding_feed: bool,
+    feedly_enabled: bool,
+    developer_build: bool,
     credentials: Option<Credentials>,
     cancel_sign_in: Option<Arc<AtomicBool>>,
     sending: bool,
@@ -125,11 +150,21 @@ impl cxx_qt::Initialize for AppController {
         if let Err(e) = local::add_default_feeds() {
             log::error!("Adding the default feeds failed: {e:#}");
         }
+        if let Err(e) = local::decode_stored_titles() {
+            log::error!("Decoding stored titles failed: {e:#}");
+        }
+        self.as_mut().set_developer_build(flags::DEVELOPER_BUILD);
+        let feedly = flags::feedly();
+        self.as_mut().set_feedly_enabled(feedly);
         self.as_mut().set_oauth_available(OAuthClient::load().is_some());
         if let Some(c) = credentials::load() {
             self.as_mut().set_account_name(QString::from(c.display_name.as_str()));
             self.as_mut().rust_mut().credentials = Some(c);
             self.as_mut().set_signed_in(true);
+            // Feedly articles would otherwise linger in the smart feeds.
+            if !feedly {
+                self.sign_out();
+            }
         }
     }
 }
@@ -169,7 +204,7 @@ impl AppController {
     }
 
     fn spawn_sign_in(mut self: Pin<&mut Self>, work: impl FnOnce(Arc<AtomicBool>) -> anyhow::Result<Credentials> + Send + 'static) {
-        if *self.signing_in() {
+        if *self.signing_in() || !*self.feedly_enabled() {
             return;
         }
         let cancel = Arc::new(AtomicBool::new(false));
@@ -181,6 +216,23 @@ impl AppController {
             let result = work(cancel);
             let _ = qt.queue(move |this| this.finish_sign_in(result));
         });
+    }
+
+    pub fn set_feedly_flag(mut self: Pin<&mut Self>, enabled: bool) {
+        if !flags::DEVELOPER_BUILD {
+            return;
+        }
+        if let Err(e) = flags::set_feedly(enabled) {
+            self.fail(format!("Couldn’t save the feature flag: {e:#}"));
+            return;
+        }
+        if !enabled {
+            self.as_mut().cancel_sign_in();
+            if *self.signed_in() {
+                self.as_mut().sign_out();
+            }
+        }
+        self.set_feedly_enabled(enabled);
     }
 
     pub fn sign_in_with_browser(self: Pin<&mut Self>) {
@@ -326,7 +378,7 @@ impl AppController {
         });
     }
 
-    pub fn article_page(&self, article_id: &QString, placeholder: &QString, text_size: i32, dark: bool) -> QString {
+    pub fn article_page(&self, article_id: &QString, placeholder: &QString, text_size: i32, dark: bool, theme: &QString, javascript: bool) -> QString {
         let class = match text_size {
             0 => "smallText",
             2 => "largeText",
@@ -334,13 +386,14 @@ impl AppController {
             4 => "xxlargeText",
             _ => "mediumText",
         };
+        let style = render::Style { theme: themes::load(&theme.to_string()), dark, javascript };
         let id = article_id.to_string();
         let html = if id.is_empty() {
-            render::system_message(&placeholder.to_string(), dark)
+            render::system_message(&placeholder.to_string(), &style)
         } else {
             match store::get().article(&id) {
-                Ok(Some(article)) => render::render(&article, class, dark),
-                _ => render::system_message("Article not found", dark),
+                Ok(Some(article)) => render::render(&article, class, &style),
+                _ => render::system_message("Article not found", &style),
             }
         };
         match render::write_page(&html) {
@@ -349,6 +402,16 @@ impl AppController {
                 log::error!("Couldn’t write the article page: {e:#}");
                 QString::from("about:blank")
             }
+        }
+    }
+
+    pub fn theme_names(&self) -> QStringList {
+        themes::names().iter().map(|n| QString::from(n.as_str())).collect()
+    }
+
+    pub fn open_themes_folder(&self) {
+        if let Err(e) = open_in_browser(&themes::folder().to_string_lossy()) {
+            log::error!("{e:#}");
         }
     }
 

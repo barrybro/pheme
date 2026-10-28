@@ -2,7 +2,7 @@
 //! Plays the role of NetNewsWire's ArticlesDatabase and SyncDatabase.
 
 use crate::feedly::models::{Category, Entry, Subscription};
-use crate::text::html_to_text;
+use crate::text::{decode_entities, html_to_text};
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use std::collections::HashSet;
@@ -644,6 +644,30 @@ impl Store {
         Ok(added)
     }
 
+    /// Decodes HTML entities left in local feed and article titles by versions that didn't
+    /// decode them (see `text::decode_entities`). Returns how many titles changed.
+    pub fn decode_local_title_entities(&mut self) -> Result<usize> {
+        let tx = self.conn.transaction()?;
+        let mut changed = 0;
+        for (table, feed_column) in [("feeds", "id"), ("articles", "feed_id")] {
+            let condition = Account::Local.condition(feed_column);
+            let rows: Vec<(String, String)> = tx
+                .prepare(&format!("SELECT id, title FROM {table} WHERE {condition} AND title LIKE '%&%;%'"))?
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+                .collect::<rusqlite::Result<_>>()?;
+            let mut update = tx.prepare(&format!("UPDATE {table} SET title = ? WHERE id = ?"))?;
+            for (id, title) in rows {
+                let decoded = decode_entities(&title);
+                if decoded != title {
+                    update.execute(params![decoded, id])?;
+                    changed += 1;
+                }
+            }
+        }
+        tx.commit()?;
+        Ok(changed)
+    }
+
     pub fn create_local_folder(&self, name: &str) -> Result<String> {
         use rand::RngExt;
         let id = format!("local-folder:{:016x}", rand::rng().random::<u64>());
@@ -803,6 +827,21 @@ mod tests {
         assert_eq!(s.timeline(&sel, false, "Title b").unwrap()[0].id, "b");
         assert_eq!(s.timeline(&sel, false, "").unwrap()[0].summary, "Hello & welcome");
         assert_eq!(s.missing_ids(&["a".into(), "z".into()]).unwrap(), vec!["z".to_string()]);
+    }
+
+    #[test]
+    fn decodes_entities_in_stored_titles() {
+        let mut s = Store::in_memory().unwrap();
+        let feed = local_feed_id("https://example.com/feed.xml");
+        let state = LocalFeedState { feed_id: feed.clone(), url: "https://example.com/feed.xml".into(), ..Default::default() };
+        s.add_local_feed(&state, "Tom &amp; Jerry", None, None, None).unwrap();
+        let article = LocalArticle { id: format!("{feed}#1"), title: Some("1024 &times; 1024".into()), published: now_ms(), ..Default::default() };
+        s.upsert_local_articles(&feed, &[article.clone()]).unwrap();
+
+        assert_eq!(s.decode_local_title_entities().unwrap(), 2);
+        assert_eq!(s.article(&article.id).unwrap().unwrap().title.as_deref(), Some("1024 × 1024"));
+        assert_eq!(s.unfoldered_feeds(Account::Local).unwrap()[0].title, "Tom & Jerry");
+        assert_eq!(s.decode_local_title_entities().unwrap(), 0);
     }
 
     #[test]

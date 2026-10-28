@@ -15,6 +15,9 @@ Rectangle {
     property bool starred: false
     property bool hasArticle: articleId.length > 0
     property int textSize: 1
+    /// The article theme's name.
+    property string theme: "Default"
+    property bool javascriptEnabled: false
     /// The one-pane layout's back button, to the timeline.
     property bool showBack: false
 
@@ -26,7 +29,7 @@ Rectangle {
     Keys.onLeftPressed: backRequested()
 
     function show() {
-        web.url = app.articlePage(articleId, qsTr("No Selection"), textSize, Theme.dark)
+        web.url = app.articlePage(articleId, qsTr("No Selection"), textSize, Theme.dark, theme, javascriptEnabled)
     }
 
     /// Makes the web view draw again. While the window is hidden (say, on another
@@ -40,6 +43,8 @@ Rectangle {
 
     onArticleIdChanged: show()
     onTextSizeChanged: show()
+    onThemeChanged: show()
+    onJavascriptEnabledChanged: show()
     Component.onCompleted: show()
     Connections {
         target: Theme
@@ -124,7 +129,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
             backgroundColor: Theme.window
-            settings.javascriptEnabled: false
+            settings.javascriptEnabled: root.javascriptEnabled
             settings.pluginsEnabled: false
             // Pages are local files (see render.rs) whose images and media are remote.
             settings.localContentCanAccessRemoteUrls: true

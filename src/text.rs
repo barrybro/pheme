@@ -90,6 +90,28 @@ pub fn html_to_text(html: &str, max_chars: usize) -> String {
     out.trim().to_string()
 }
 
+/// Decodes HTML character references, leaving everything else, tags and unknown entities
+/// included, as written. Titles are plain text, but some feeds put HTML entities that XML
+/// doesn't define in them, like `&times;`, or escape entities twice, like `&amp;#8217;`.
+pub fn decode_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i + 1..];
+        let decoded = rest.find(';').filter(|&end| end <= 10).and_then(|end| Some((decode_entity(&rest[..end])?, end + 1)));
+        match decoded {
+            Some((c, len)) => {
+                out.push(c);
+                rest = &rest[len..];
+            }
+            None => out.push('&'),
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 fn decode_entity(entity: &str) -> Option<char> {
     if let Some(num) = entity.strip_prefix('#') {
         let code = match num.strip_prefix(['x', 'X']) {
@@ -115,6 +137,83 @@ fn decode_entity(entity: &str) -> Option<char> {
         "copy" => '©',
         "reg" => '®',
         "trade" => '™',
+        "times" => '×',
+        "divide" => '÷',
+        "plusmn" => '±',
+        "minus" => '−',
+        "deg" => '°',
+        "middot" => '·',
+        "bull" => '•',
+        "laquo" => '«',
+        "raquo" => '»',
+        "lsaquo" => '‹',
+        "rsaquo" => '›',
+        "sbquo" => '‚',
+        "bdquo" => '„',
+        "prime" => '′',
+        "Prime" => '″',
+        "larr" => '←',
+        "rarr" => '→',
+        "uarr" => '↑',
+        "darr" => '↓',
+        "harr" => '↔',
+        "euro" => '€',
+        "pound" => '£',
+        "cent" => '¢',
+        "yen" => '¥',
+        "sect" => '§',
+        "para" => '¶',
+        "micro" => 'µ',
+        "frac12" => '½',
+        "frac14" => '¼',
+        "frac34" => '¾',
+        "sup2" => '²',
+        "sup3" => '³',
+        "iexcl" => '¡',
+        "iquest" => '¿',
+        "aacute" => 'á',
+        "agrave" => 'à',
+        "acirc" => 'â',
+        "atilde" => 'ã',
+        "auml" => 'ä',
+        "aring" => 'å',
+        "aelig" => 'æ',
+        "ccedil" => 'ç',
+        "eacute" => 'é',
+        "egrave" => 'è',
+        "ecirc" => 'ê',
+        "euml" => 'ë',
+        "iacute" => 'í',
+        "igrave" => 'ì',
+        "icirc" => 'î',
+        "iuml" => 'ï',
+        "ntilde" => 'ñ',
+        "oacute" => 'ó',
+        "ograve" => 'ò',
+        "ocirc" => 'ô',
+        "otilde" => 'õ',
+        "ouml" => 'ö',
+        "oslash" => 'ø',
+        "szlig" => 'ß',
+        "uacute" => 'ú',
+        "ugrave" => 'ù',
+        "ucirc" => 'û',
+        "uuml" => 'ü',
+        "yacute" => 'ý',
+        "yuml" => 'ÿ',
+        "Aacute" => 'Á',
+        "Agrave" => 'À',
+        "Auml" => 'Ä',
+        "Aring" => 'Å',
+        "Ccedil" => 'Ç',
+        "Eacute" => 'É',
+        "Egrave" => 'È',
+        "Ntilde" => 'Ñ',
+        "Oacute" => 'Ó',
+        "Ouml" => 'Ö',
+        "Oslash" => 'Ø',
+        "Uacute" => 'Ú',
+        "Uuml" => 'Ü',
         _ => return None,
     })
 }
@@ -154,12 +253,25 @@ pub fn timeline_date(ms: i64) -> String {
 
 /// The article view's dateline, e.g. "Oct 27, 2026 at 6:53 PM".
 pub fn medium_datetime(ms: i64) -> String {
-    local(ms).map(|dt| dt.format("%b %-d, %Y at %-I:%M %p").to_string()).unwrap_or_default()
+    format_date(ms, "%b %-d, %Y at %-I:%M %p")
+}
+
+/// Formats a timestamp in local time with a chrono format string.
+pub fn format_date(ms: i64, format: &str) -> String {
+    local(ms).map(|dt| dt.format(format).to_string()).unwrap_or_default()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn decodes_entities_in_titles() {
+        assert_eq!(decode_entities("1024 &times; 1024"), "1024 × 1024");
+        assert_eq!(decode_entities("Here&#8217;s What&#x2019;s New"), "Here’s What’s New");
+        assert_eq!(decode_entities("AT&T & <b>bold</b> &bogus; &amp"), "AT&T & <b>bold</b> &bogus; &amp");
+        assert_eq!(decode_entities("café &eacute;t&eacute;"), "café été");
+    }
 
     #[test]
     fn strips_markup_and_decodes_entities() {

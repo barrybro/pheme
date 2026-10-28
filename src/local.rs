@@ -3,6 +3,7 @@
 
 use crate::feedly::api::http_client;
 use crate::store::{self, LocalArticle, LocalFeedState, local_feed_id};
+use crate::text::decode_entities;
 use anyhow::{Context, Result, anyhow, bail};
 use reqwest::StatusCode;
 use reqwest::blocking::Client;
@@ -13,6 +14,7 @@ use std::sync::Mutex;
 const DEFAULT_FEEDS: &[(&str, &str, &str)] = &[
     ("Daring Fireball", "https://daringfireball.net/feeds/main", "https://daringfireball.net/"),
     ("Six Colors", "https://feedpress.me/sixcolors?type=xml", "https://sixcolors.com/"),
+    ("MacRumors", "https://feeds.macrumors.com/MacRumors-All", "https://www.macrumors.com/"),
 ];
 
 /// The default feed URLs already offered, as a JSON list. Older versions stored "1",
@@ -41,6 +43,22 @@ pub fn add_default_feeds() -> Result<()> {
     }
     s.set_setting(DEFAULTS_OFFERED_KEY, &serde_json::to_string(&offered)?)?;
     Ok(())
+}
+
+const TITLES_DECODED_KEY: &str = "local.title_entities_decoded";
+
+/// Once: decodes HTML entities in titles stored before Pheme decoded them on the way in.
+/// Unchanged feeds aren't parsed again, so refreshing alone wouldn't fix them.
+pub fn decode_stored_titles() -> Result<()> {
+    let mut s = store::get();
+    if s.setting(TITLES_DECODED_KEY).is_some() {
+        return Ok(());
+    }
+    let changed = s.decode_local_title_entities()?;
+    if changed > 0 {
+        log::info!("Decoded HTML entities in {changed} stored titles");
+    }
+    s.set_setting(TITLES_DECODED_KEY, "1")
 }
 
 /// Feeds refreshed at once.
@@ -197,10 +215,6 @@ fn attribute(tag: &str, name: &str) -> Option<String> {
     None
 }
 
-fn decode_entities(s: &str) -> String {
-    s.replace("&amp;", "&").replace("&#38;", "&")
-}
-
 fn text(t: &Option<feed_rs::model::Text>) -> Option<String> {
     t.as_ref().map(|t| t.content.trim().to_string()).filter(|s| !s.is_empty())
 }
@@ -250,7 +264,7 @@ fn is_image(http: &Client, url: &str) -> bool {
 }
 
 pub fn title(feed: &feed_rs::model::Feed, feed_url: &str) -> String {
-    text(&feed.title).unwrap_or_else(|| feed_url.to_string())
+    text(&feed.title).map(|t| decode_entities(&t)).unwrap_or_else(|| feed_url.to_string())
 }
 
 fn articles(feed_id: &str, feed: &feed_rs::model::Feed) -> Vec<LocalArticle> {
@@ -284,7 +298,7 @@ fn articles(feed_id: &str, feed: &feed_rs::model::Feed) -> Vec<LocalArticle> {
             let published = e.published.or(e.updated).map(|d| d.timestamp_millis()).unwrap_or(now);
             LocalArticle {
                 id: format!("{feed_id}#{}", e.id),
-                title: text(&e.title),
+                title: text(&e.title).map(|t| decode_entities(&t)),
                 author: e.authors.iter().find_map(|a| a.name.clone()).filter(|n| !n.trim().is_empty()),
                 content_html: content_html.or_else(|| summary_html.clone()),
                 summary_html,

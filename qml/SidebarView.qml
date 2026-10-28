@@ -13,6 +13,8 @@ Rectangle {
     property string currentKey: ""
     /// Whether the header shows a button to hide the sidebar.
     property bool canHide: true
+    /// 0: show unread counts, 1: show a dot, 2: hide.
+    property int unreadCountDisplay: 0
 
     signal sourceSelected(string key, string title)
     /// A source was clicked, as opposed to reached with the arrow keys.
@@ -26,6 +28,7 @@ Rectangle {
     signal importRequested()
     signal exportRequested()
     signal signInRequested()
+    signal settingsRequested()
 
     /// The local folder new feeds should go into, given the current selection.
     function currentLocalFolder() {
@@ -160,7 +163,11 @@ Rectangle {
             keyNavigationEnabled: false
             activeFocusOnTab: true
             reuseItems: true
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            // Always shown while the list overflows, rather than only while scrolling.
+            ScrollBar.vertical: ScrollBar {
+                id: scrollBar
+                policy: size < 1.0 ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
 
             Keys.onUpPressed: root.step(-1)
             Keys.onDownPressed: root.step(1)
@@ -195,7 +202,7 @@ Rectangle {
                 readonly property bool isSelected: itemKey === root.currentKey && !isHeader
                 readonly property bool focused: isSelected && list.activeFocus
 
-                width: ListView.view.width
+                width: ListView.view.width - (scrollBar.visible ? scrollBar.width : 0)
                 height: isHeader ? 32 : 28
                 padding: 0
                 focusPolicy: Qt.NoFocus
@@ -271,7 +278,8 @@ Rectangle {
                     }
 
                     UnreadBadge {
-                        count: row.unreadCount
+                        count: root.unreadCountDisplay === 2 ? 0 : row.unreadCount
+                        dot: root.unreadCountDisplay === 1
                         selected: row.focused
                     }
 
@@ -338,7 +346,7 @@ Rectangle {
                 }
                 IconButton {
                     iconName: "account"
-                    tip: qsTr("Accounts and Subscriptions")
+                    tip: qsTr("Subscriptions and Settings")
                     implicitWidth: 26
                     implicitHeight: 24
                     icon.width: 15
@@ -355,7 +363,10 @@ Rectangle {
                             text: qsTr("Export Subscriptions (OPML)…")
                             onTriggered: root.exportRequested()
                         }
-                        MenuSeparator {}
+                        MenuSeparator {
+                            visible: root.app.feedlyEnabled
+                            height: visible ? implicitHeight : 0
+                        }
                         MenuItem {
                             visible: root.app.signedIn
                             height: visible ? implicitHeight : 0
@@ -363,8 +374,15 @@ Rectangle {
                             enabled: false
                         }
                         MenuItem {
+                            visible: root.app.feedlyEnabled
+                            height: visible ? implicitHeight : 0
                             text: root.app.signedIn ? qsTr("Sign Out of Feedly…") : qsTr("Add Feedly Account…")
                             onTriggered: root.app.signedIn ? signOutDialog.open() : root.signInRequested()
+                        }
+                        MenuSeparator {}
+                        MenuItem {
+                            text: qsTr("Settings…")
+                            onTriggered: root.settingsRequested()
                         }
                     }
                 }

@@ -1,43 +1,61 @@
 //! Renders an article to a full HTML page, following NetNewsWire's ArticleRenderer.
 
 use crate::store::ArticleDetail;
-use crate::text::{escape_html, medium_datetime};
+use crate::text::{escape_html, format_date, medium_datetime};
+use crate::themes::Theme;
 
 const TEMPLATE: &str = include_str!("../resources/article/template.html");
 const STYLESHEET: &str = include_str!("../resources/article/stylesheet.css");
 
-/// QtWebEngine doesn't reliably follow the desktop's light/dark setting, so the
-/// stylesheet's dark-mode media queries are switched on or off explicitly.
-fn stylesheet(dark: bool) -> String {
-    let replacement = if dark { "@media all" } else { "@media not all" };
-    STYLESHEET
-        .replace("@media(prefers-color-scheme: dark)", replacement)
-        .replace("@media screen and (prefers-color-scheme: dark)", replacement)
+/// How pages look: the article theme (`None` for Pheme's own), light or dark, and
+/// whether scripts may run.
+pub struct Style {
+    pub theme: Option<Theme>,
+    pub dark: bool,
+    pub javascript: bool,
+}
+
+impl Style {
+    fn template(&self) -> &str {
+        self.theme.as_ref().map_or(TEMPLATE, |t| &t.template)
+    }
+
+    /// QtWebEngine doesn't reliably follow the desktop's light/dark setting, so the
+    /// stylesheet's color-scheme media queries are answered explicitly: on a screen,
+    /// `(color)` always matches and `(monochrome)` never does.
+    fn stylesheet(&self) -> String {
+        let css = self.theme.as_ref().map_or(STYLESHEET, |t| &t.stylesheet);
+        let (dark, light) = if self.dark { ("(color)", "(monochrome)") } else { ("(monochrome)", "(color)") };
+        css.replace("(prefers-color-scheme: dark)", dark)
+            .replace("(prefers-color-scheme:dark)", dark)
+            .replace("(prefers-color-scheme: light)", light)
+            .replace("(prefers-color-scheme:light)", light)
+    }
 }
 
 /// `base` resolves the article's relative links and images, since the page itself is
 /// loaded from a local file (see `write_page`).
-fn page(body: &str, title: &str, dark: bool, base: Option<&str>) -> String {
-    let style = stylesheet(dark);
+fn page(body: &str, title: &str, style: &Style, base: Option<&str>) -> String {
+    let css = style.stylesheet();
     let base = base
         .filter(|b| b.starts_with("http://") || b.starts_with("https://"))
         .map(|b| format!("<base href=\"{}\">", escape_html(b)))
         .unwrap_or_default();
+    let csp = if style.javascript { "" } else { "<meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'none'\">" };
     format!(
         "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">{base}\
-         <meta name=\"viewport\" content=\"width=device-width\">\
-         <meta http-equiv=\"Content-Security-Policy\" content=\"script-src 'none'\">\
-         <title>{}</title><style>{style}</style></head><body>{body}</body></html>",
+         <meta name=\"viewport\" content=\"width=device-width\">{csp}\
+         <title>{}</title><style>{css}</style></head><body>{body}</body></html>",
         escape_html(title)
     )
 }
 
 /// The placeholder shown when nothing (or several things) are selected.
-pub fn system_message(message: &str, dark: bool) -> String {
-    page(&format!("<div class=\"systemMessage\">{}</div>", escape_html(message)), "", dark, None)
+pub fn system_message(message: &str, style: &Style) -> String {
+    page(&format!("<div class=\"systemMessage\">{}</div>", escape_html(message)), "", style, None)
 }
 
-pub fn render(article: &ArticleDetail, text_size_class: &str, dark: bool) -> String {
+pub fn render(article: &ArticleDetail, text_size_class: &str, style: &Style) -> String {
     let title = article.title.clone().unwrap_or_default();
     let link = article.url.clone().unwrap_or_default();
     let byline = article
@@ -46,6 +64,7 @@ pub fn render(article: &ArticleDetail, text_size_class: &str, dark: bool) -> Str
         .filter(|a| !a.trim().is_empty())
         .map(|a| format!("By {}", escape_html(a)))
         .unwrap_or_default();
+    let avatar_src = article.icon_url.as_deref().map(escape_html).unwrap_or_default();
     let avatar = article
         .icon_url
         .as_deref()
@@ -57,29 +76,44 @@ pub fn render(article: &ArticleDetail, text_size_class: &str, dark: bool) -> Str
     }
 
     let dateline_style = if title.is_empty() { "articleDatelineTitle" } else { "articleDateline" };
+    let date = |format: &str| escape_html(&format_date(article.published, format));
 
-    let substitutions: [(&str, String); 12] = [
+    let substitutions: [(&str, String); 21] = [
         ("feed_link_title", escape_html(&article.feed_title)),
         ("feed_link", escape_html(article.feed_website.as_deref().unwrap_or(""))),
         ("byline", byline),
+        ("avatar_src", avatar_src),
         ("avatar", avatar),
         ("preferred_link", escape_html(&link)),
         ("title", escape_html(&title)),
         ("dateline_style", dateline_style.into()),
+        ("datetime_long", date("%B %-d, %Y at %-I:%M:%S %p")),
         ("datetime_medium", escape_html(&medium_datetime(article.published))),
+        ("datetime_short", date("%-m/%-d/%y, %-I:%M %p")),
+        ("date_long", date("%B %-d, %Y")),
+        ("date_medium", date("%b %-d, %Y")),
+        ("date_short", date("%-m/%-d/%y")),
+        ("time_long", date("%-I:%M:%S %p %Z")),
+        ("time_medium", date("%-I:%M:%S %p")),
+        ("time_short", date("%-I:%M %p")),
         ("external_link_label", String::new()),
         ("external_link_stripped", String::new()),
         ("external_link", String::new()),
         ("text_size_class", text_size_class.into()),
     ];
-    let mut html = TEMPLATE.to_string();
+    let mut html = style.template().to_string();
     for (key, value) in substitutions {
         html = html.replace(&format!("[[{key}]]"), &value);
     }
     // Body and enclosures last, so markup inside the article can't be mistaken for placeholders.
-    html = html.replace("[[enclosures]]", &enclosures_html(article));
+    // Like NetNewsWire, templates without [[enclosures]] get them after the body.
+    if html.contains("[[enclosures]]") {
+        html = html.replace("[[enclosures]]", &enclosures_html(article));
+    } else {
+        body = format!("<div>{body}</div>{}", enclosures_html(article));
+    }
     html = html.replace("[[body]]", &body);
-    page(&html, &title, dark, article.url.as_deref())
+    page(&html, &title, style, article.url.as_deref())
 }
 
 fn enclosures_html(article: &ArticleDetail) -> String {

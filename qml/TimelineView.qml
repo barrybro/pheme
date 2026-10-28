@@ -186,7 +186,11 @@ Rectangle {
             keyNavigationEnabled: false
             boundsBehavior: Flickable.StopAtBounds
             reuseItems: true
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            // Always shown while the list overflows, rather than only while scrolling.
+            ScrollBar.vertical: ScrollBar {
+                id: scrollBar
+                policy: size < 1.0 ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+            }
 
             Keys.onUpPressed: root.selectRow(Math.max(0, root.currentRow() - 1))
             Keys.onDownPressed: root.selectRow(Math.min(list.count - 1, root.currentRow() + 1))
@@ -233,7 +237,7 @@ Rectangle {
                 readonly property color primary: focused ? "white" : Theme.text
                 readonly property color secondary: focused ? Qt.rgba(1, 1, 1, 0.85) : Theme.secondaryText
 
-                width: ListView.view.width
+                width: ListView.view.width - (scrollBar.visible ? scrollBar.width : 0)
                 padding: 0
                 focusPolicy: Qt.NoFocus
                 hoverEnabled: false

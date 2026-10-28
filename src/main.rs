@@ -3,10 +3,12 @@
 mod bridge;
 mod credentials;
 mod feedly;
+mod flags;
 mod local;
 mod paths;
 mod render;
 mod store;
+mod themes;
 mod sync;
 mod text;
 

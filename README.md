@@ -7,8 +7,9 @@ with Today / All Unread / Starred, a timeline, and an article pane.
 Like NetNewsWire, it has two kinds of accounts:
 
 - **On My Computer**: feeds Pheme downloads itself (RSS, Atom, and JSON Feed). Read and
-  starred state stays on this computer. It starts out subscribed to Daring Fireball and Six Colors.
-- **Feedly** (optional): your Feedly subscriptions, with read and starred state synced.
+  starred state stays on this computer. It starts out subscribed to Daring Fireball, Six Colors, and MacRumors.
+- **Feedly** (optional, not finished): your Feedly subscriptions, with read and starred
+  state synced. Off behind a feature flag for now; see below.
 
 ## Narrow windows
 
@@ -28,7 +29,7 @@ The layout adapts to the window's width, so Pheme works tiled beside other apps:
 - **Import/Export Subscriptions (OPML)** from the menu at the bottom of the sidebar, to
   move your subscriptions from or to another reader.
 
-Pheme refreshes every 30 minutes, six feeds at a time, and asks servers only for feeds
+Pheme refreshes every 30 minutes (change it in Settings), six feeds at a time, and asks servers only for feeds
 that changed. Articles older than 90 days are not imported, and read, unstarred ones that
 old are cleaned up.
 
@@ -45,9 +46,31 @@ To install for your user:
     install -Dm644 data/pheme.desktop ~/.local/share/applications/pheme.desktop
     install -Dm644 resources/icons/pheme.svg ~/.local/share/icons/hicolor/scalable/apps/pheme.svg
 
+## Settings
+
+**Settings…** (Ctrl+,, or the menu at the bottom of the sidebar) has NetNewsWire's
+General preferences:
+
+- **Unread Counts:** show the sidebar's unread counts, a dot, or nothing.
+- **Article Text Size**
+- **Article Theme:** Pheme's default, NetNewsWire's bundled themes, or your own.
+  **Open Themes Folder** opens `~/.local/share/pheme/Themes`; drop a NetNewsWire
+  `.nnwtheme` folder there and it shows up the next time Settings comes forward.
+- **Article Content:** enable JavaScript in articles, for embedded videos and posts.
+  Off by default. The NewsFax, Appanoose, and Promenade themes use a little JavaScript
+  for decoration and look slightly plainer without it.
+- **Refresh Feeds:** manually only, or every 30 minutes to every 8 hours.
+
+## Feature flags and the Developer tab
+
+Feedly support is off behind a feature flag. Release builds always leave it off. Dev
+builds (`cargo run`, without `--release`) add a **Developer** tab to Settings, where
+**Feedly support** turns it on. Turning it off signs out of
+Feedly. With the flag off there's no welcome screen and no Feedly menu items.
+
 ## Signing in to Feedly
 
-Choose it on the welcome screen, or later from the menu at the bottom of the sidebar.
+With the flag on, choose it on the welcome screen, or later from the menu at the bottom of the sidebar.
 Feedly offers two ways in:
 
 1. **Developer access token** (works today). Get one at <https://feedly.com/v3/auth/dev>
@@ -98,6 +121,7 @@ Feedly offers two ways in:
 - `src/local.rs`: the On My Computer account: feed discovery, fetching, parsing, icons, OPML
 - `src/store.rs`: SQLite storage
 - `src/render.rs`, `resources/article/`: article HTML, using NetNewsWire's template and stylesheet (MIT)
+- `src/themes.rs`, `resources/themes/`: article themes, including NetNewsWire's bundled ones (MIT)
 - `src/bridge/`: cxx-qt objects exposed to QML
 - `qml/`: the interface
 
@@ -110,3 +134,5 @@ point them at a scratch directory: `XDG_DATA_HOME=/tmp/pheme-test cargo test -- 
 ## License notes
 
 The article template and stylesheet are adapted from NetNewsWire, © Brent Simmons, MIT License.
+The themes in `resources/themes/` come from NetNewsWire's repository (MIT License); each
+theme's Info.plist names its creator. NewsFax's font is ModeSeven (freeware); see its License.md.
