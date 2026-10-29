@@ -99,6 +99,14 @@ ApplicationWindow {
             rowSpacing: 14
             Layout.alignment: Qt.AlignTop
 
+            FormLabel { text: qsTr("Appearance:") }
+            ComboBox {
+                Layout.preferredWidth: 200
+                model: [qsTr("Match System"), qsTr("Light"), qsTr("Dark")]
+                currentIndex: root.preferences.appearance
+                onActivated: function(index) { root.preferences.appearance = index }
+            }
+
             FormLabel {
                 text: qsTr("Unread Counts:")
                 Layout.alignment: Qt.AlignRight | Qt.AlignTop

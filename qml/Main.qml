@@ -136,12 +136,22 @@ ApplicationWindow {
     Settings {
         id: preferences
         category: "general"
+        /// 0: follow the desktop, 1: light, 2: dark.
+        property int appearance: 0
         /// 0: show counts, 1: show a dot, 2: hide.
         property int unreadCountDisplay: 0
         property string articleTheme: "Default"
         property bool javascriptEnabled: false
         /// Minutes between automatic refreshes; 0 means manually only.
         property int refreshInterval: 30
+    }
+
+    // Overriding Qt's color scheme recolors Theme, the controls, and article pages alike;
+    // Unknown means follow the desktop.
+    Binding {
+        target: Qt.styleHints
+        property: "colorScheme"
+        value: [Qt.ColorScheme.Unknown, Qt.ColorScheme.Light, Qt.ColorScheme.Dark][preferences.appearance] ?? Qt.ColorScheme.Unknown
     }
 
     SettingsWindow {
