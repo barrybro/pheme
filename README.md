@@ -51,6 +51,8 @@ To install for your user:
 **Settings…** (Ctrl+,, or the menu at the bottom of the sidebar) has NetNewsWire's
 General preferences:
 
+- **Appearance:** match the desktop's light or dark setting (the default), or always
+  use light or dark. Article pages follow it too.
 - **Unread Counts:** show the sidebar's unread counts, a dot, or nothing.
 - **Article Text Size**
 - **Article Theme:** Pheme's default, NetNewsWire's bundled themes, or your own.
