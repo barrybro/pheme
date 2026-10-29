@@ -16,6 +16,7 @@ use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QString, QUrl};
 
 unsafe extern "C" {
     fn pheme_platform_init();
+    fn pheme_platform_init_after_app();
 }
 
 fn main() {
@@ -30,6 +31,8 @@ fn main() {
         app.as_mut().set_organization_name(&QString::from("pheme"));
     }
     QGuiApplication::set_desktop_file_name(&QString::from("pheme"));
+    // SAFETY: called once, now that the QGuiApplication exists and before any web view does.
+    unsafe { pheme_platform_init_after_app() };
 
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {

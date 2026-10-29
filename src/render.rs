@@ -135,12 +135,21 @@ fn enclosures_html(article: &ArticleDetail) -> String {
     out
 }
 
-/// Writes a rendered page to a private runtime file and returns a URL for it.
+/// The origin of an article's web page, like `https://example.com/`: the Referer frames
+/// embedded in the article get, as they would on the article's own site. YouTube's
+/// player refuses to play (error 153) without one, and pages loaded from files send none.
+pub fn embed_referrer(article_url: Option<&str>) -> Option<String> {
+    let url = url::Url::parse(article_url?).ok()?;
+    matches!(url.scheme(), "http" | "https").then(|| format!("{}/", url.origin().ascii_serialization()))
+}
+
+/// Writes a rendered page to a private runtime file and returns a URL for it. The URL
+/// carries `referrer` (see `embed_referrer`) for the request interceptor in platform.cpp.
 ///
 /// The article view loads pages by URL rather than with `loadHtml`: QtWebEngine's
 /// `loadHtml` sometimes commits a blank page instead of the HTML it was given.
 /// Two files alternate so each load is a real navigation to a different URL.
-pub fn write_page(html: &str) -> anyhow::Result<String> {
+pub fn write_page(html: &str, referrer: Option<&str>) -> anyhow::Result<String> {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let dir = std::env::var_os("XDG_RUNTIME_DIR")
@@ -151,5 +160,10 @@ pub fn write_page(html: &str) -> anyhow::Result<String> {
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     let path = dir.join(format!("article-{}.html", n % 2));
     std::fs::write(&path, html)?;
-    Ok(format!("{}?v={n}", url::Url::from_file_path(&path).map_err(|_| anyhow::anyhow!("bad path"))?))
+    let mut url = url::Url::from_file_path(&path).map_err(|_| anyhow::anyhow!("bad path"))?;
+    url.query_pairs_mut().append_pair("v", &n.to_string());
+    if let Some(referrer) = referrer {
+        url.query_pairs_mut().append_pair("referrer", referrer);
+    }
+    Ok(url.into())
 }

@@ -54,8 +54,10 @@ General preferences:
 - **Unread Counts:** show the sidebar's unread counts, a dot, or nothing.
 - **Article Text Size**
 - **Article Theme:** Pheme's default, NetNewsWire's bundled themes, or your own.
-  **Open Themes Folder** opens `~/.local/share/pheme/Themes`; drop a NetNewsWire
-  `.nnwtheme` folder there and it shows up the next time Settings comes forward.
+  **Import Theme…** installs a NetNewsWire `.nnwtheme` folder, or a zip file holding
+  one, and switches to it; importing a theme again replaces it. Themes live in
+  `~/.local/share/pheme/Themes` (**Open Themes Folder**); a `.nnwtheme` folder copied
+  there by hand shows up the next time Settings comes forward.
 - **Article Content:** enable JavaScript in articles, for embedded videos and posts.
   Off by default. The NewsFax, Appanoose, and Promenade themes use a little JavaScript
   for decoration and look slightly plainer without it.

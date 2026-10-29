@@ -15,6 +15,7 @@ fn main() {
     });
     println!("cargo:rerun-if-changed=qml");
     println!("cargo:rerun-if-changed=resources/icons");
+    println!("cargo:rerun-if-changed=cpp");
 
     let icons = std::fs::read_dir("resources/icons")
         .expect("icons directory")
@@ -25,6 +26,7 @@ fn main() {
         .qt_module("Gui")
         .qt_module("Quick")
         .qt_module("QuickControls2")
+        .qt_module("WebEngineCore")
         .qt_module("WebEngineQuick")
         .files([
             "src/bridge/app_controller.rs",

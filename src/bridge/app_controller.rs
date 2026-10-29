@@ -72,6 +72,10 @@ pub mod qobject {
         #[qinvokable]
         fn open_themes_folder(self: &AppController);
 
+        /// Installs a theme from a `.nnwtheme` folder or a zip file. Finishes with `theme_imported`.
+        #[qinvokable]
+        fn import_theme(self: Pin<&mut AppController>, url: &QString);
+
         #[qinvokable]
         fn open_url(self: &AppController, url: &QString);
 
@@ -109,6 +113,10 @@ pub mod qobject {
 
         #[qsignal]
         fn feed_added(self: Pin<&mut AppController>, ok: bool, message: QString, key: QString);
+
+        /// `name` is the imported theme's name; `message` says what went wrong.
+        #[qsignal]
+        fn theme_imported(self: Pin<&mut AppController>, ok: bool, message: QString, name: QString);
     }
 
     impl cxx_qt::Threading for AppController {}
@@ -388,15 +396,15 @@ impl AppController {
         };
         let style = render::Style { theme: themes::load(&theme.to_string()), dark, javascript };
         let id = article_id.to_string();
-        let html = if id.is_empty() {
-            render::system_message(&placeholder.to_string(), &style)
+        let (html, referrer) = if id.is_empty() {
+            (render::system_message(&placeholder.to_string(), &style), None)
         } else {
             match store::get().article(&id) {
-                Ok(Some(article)) => render::render(&article, class, &style),
-                _ => render::system_message("Article not found", &style),
+                Ok(Some(article)) => (render::render(&article, class, &style), render::embed_referrer(article.url.as_deref())),
+                _ => (render::system_message("Article not found", &style), None),
             }
         };
-        match render::write_page(&html) {
+        match render::write_page(&html, referrer.as_deref()) {
             Ok(url) => QString::from(url.as_str()),
             Err(e) => {
                 log::error!("Couldn’t write the article page: {e:#}");
@@ -412,6 +420,17 @@ impl AppController {
     pub fn open_themes_folder(&self) {
         if let Err(e) = open_in_browser(&themes::folder().to_string_lossy()) {
             log::error!("{e:#}");
+        }
+    }
+
+    pub fn import_theme(self: Pin<&mut Self>, url: &QString) {
+        let Some(path) = file_path(url) else { return };
+        match themes::import(std::path::Path::new(&path)) {
+            Ok(name) => self.theme_imported(true, QString::default(), QString::from(name.as_str())),
+            Err(e) => {
+                log::warn!("Importing the theme {path} failed: {e:#}");
+                self.theme_imported(false, QString::from(format!("{e:#}").as_str()), QString::default());
+            }
         }
     }
 

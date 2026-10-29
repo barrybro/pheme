@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 // The Settings window, after NetNewsWire's General preferences. Dev builds add a
 // Developer tab.
@@ -36,6 +37,34 @@ ApplicationWindow {
     onActiveChanged: if (active) themeNames = app.themeNames()
 
     readonly property var refreshMinutes: [0, 30, 60, 120, 240, 480]
+
+    /// Why the last theme import failed, if it did.
+    property string themeError: ""
+
+    Connections {
+        target: root.app
+        function onThemeImported(ok, message, name) {
+            root.themeError = message
+            if (ok) {
+                root.themeNames = root.app.themeNames()
+                root.preferences.articleTheme = name
+            }
+        }
+    }
+
+    // A .nnwtheme is a folder, which a file dialog can't choose, so there's one of each.
+    FolderDialog {
+        id: themeFolderDialog
+        title: qsTr("Import Theme Folder")
+        onAccepted: root.app.importTheme(selectedFolder.toString())
+    }
+
+    FileDialog {
+        id: themeZipDialog
+        title: qsTr("Import Theme")
+        nameFilters: [qsTr("Zip files (*.zip)"), qsTr("All files (*)")]
+        onAccepted: root.app.importTheme(selectedFile.toString())
+    }
 
     Shortcut { sequences: ["Escape", "Ctrl+W"]; onActivated: root.close() }
 
@@ -97,18 +126,46 @@ ApplicationWindow {
                 onActivated: function(index) { root.windowSettings.textSize = index }
             }
 
-            FormLabel { text: qsTr("Article Theme:") }
-            RowLayout {
-                spacing: 8
+            FormLabel {
+                text: qsTr("Article Theme:")
+                Layout.alignment: Qt.AlignRight | Qt.AlignTop
+                topPadding: 6
+            }
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 6
                 ComboBox {
                     Layout.preferredWidth: 200
                     model: root.themeNames
                     currentIndex: Math.max(0, root.themeNames.indexOf(root.preferences.articleTheme))
                     onActivated: root.preferences.articleTheme = currentText
                 }
-                Button {
-                    text: qsTr("Open Themes Folder")
-                    onClicked: root.app.openThemesFolder()
+                RowLayout {
+                    spacing: 8
+                    Button {
+                        text: qsTr("Import Theme…")
+                        onClicked: importMenu.popup()
+                        Menu {
+                            id: importMenu
+                            MenuItem {
+                                text: qsTr("From a Theme Folder (.nnwtheme)…")
+                                onTriggered: themeFolderDialog.open()
+                            }
+                            MenuItem {
+                                text: qsTr("From a Zip File…")
+                                onTriggered: themeZipDialog.open()
+                            }
+                        }
+                    }
+                    Button {
+                        text: qsTr("Open Themes Folder")
+                        onClicked: root.app.openThemesFolder()
+                    }
+                }
+                Note {
+                    visible: root.themeError.length > 0
+                    text: root.themeError
+                    color: "#e5484d"
                 }
             }
 
