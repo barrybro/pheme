@@ -132,10 +132,14 @@ ApplicationWindow {
         property bool onboarded: false
     }
 
-    // Set in the Settings window.
+    // Set in the Settings window. Not "general": QSettings writes a "general" group as its
+    // special [%General] section, then reads that back as "General", so nothing saved there
+    // ever loads and each save appends another [%General].
     Settings {
         id: preferences
-        category: "general"
+        category: "preferences"
+        /// Whether the preferences saved under the old "general" category were brought over.
+        property bool importedGeneral: false
         /// 0: follow the desktop, 1: light, 2: dark.
         property int appearance: 0
         /// 0: show counts, 1: show a dot, 2: hide.
@@ -144,6 +148,30 @@ ApplicationWindow {
         property bool javascriptEnabled: false
         /// Minutes between automatic refreshes; 0 means manually only.
         property int refreshInterval: 30
+
+        // Brings over what the old "general" category saved, which Qt reads as "General".
+        // The INI file stores every value as text; with duplicate sections, the last wins.
+        Component.onCompleted: {
+            if (importedGeneral)
+                return
+            const ints = ["appearance", "unreadCountDisplay", "refreshInterval"]
+            for (const key of ints) {
+                const n = parseInt(legacyPreferences.value(key))
+                if (!isNaN(n))
+                    preferences[key] = n
+            }
+            const theme = legacyPreferences.value("articleTheme")
+            if (theme !== undefined && String(theme).length > 0)
+                articleTheme = String(theme)
+            const js = legacyPreferences.value("javascriptEnabled")
+            if (js !== undefined)
+                javascriptEnabled = js === true || js === "true"
+            importedGeneral = true
+        }
+    }
+    Settings {
+        id: legacyPreferences
+        category: "General"
     }
 
     // Overriding Qt's color scheme recolors Theme, the controls, and article pages alike;

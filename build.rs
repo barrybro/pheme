@@ -34,6 +34,7 @@ fn main() {
             "src/bridge/timeline_model.rs",
         ])
         .cpp_file("cpp/platform.cpp")
+        .cpp_file("cpp/touchpad_momentum.cpp")
         .qrc_resources(icons)
         .build();
 }
