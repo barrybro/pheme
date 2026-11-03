@@ -49,8 +49,11 @@ public:
 
 }
 
+void pheme_install_touchpad_momentum(); // touchpad_momentum.cpp
+
 extern "C" void pheme_platform_init_after_app()
 {
+    pheme_install_touchpad_momentum();
     auto *profile = QQuickWebEngineProfile::defaultProfile();
     profile->setUrlRequestInterceptor(new EmbedReferrer(profile));
 }
